@@ -1,0 +1,31 @@
+version: '3'
+networks:
+  socket: # имя сети, в которой работают приложения, находящиеся внутри разных контейнеров докера
+services:
+  postgres: # имя службы, на которой размещено приложение сервера для БД PostgreSQL
+    image: postgres:latest # образ последней версии для PostgreSQL
+    restart: always # установка политики перезапуска для контейнера
+    environment:
+      POSTGRES_DB: socket_db # имя БД
+      POSTGRES_USER: postgres # имя пользователя БД
+      POSTGRES_PASSWORD: postgres # пароль пользователя БД
+    ports:
+      - "5432:5432" # порт, на котором будет запущено приложение, совпадает с портом на хост машине
+    volumes:
+      - ./init/init.sql:/docker-entrypoint-initdb.d/init.sql # монтирование sql скриптов как том в контейнере в каталоге docker-entrypoint-initdb.d. Позволяет выполнять сценарии из файла init.sql при инициализации контейнера
+    networks:
+      - socket
+  pgadmin:
+    image: dpage/pgadmin4:latest # имя службы, на которой размещено приложение админ панели pgAdmin для БД PostgreSQL
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: alesia@alesia.com
+      PGADMIN_DEFAULT_PASSWORD: alesia
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5000:80"
+    depends_on:
+      - postgres # установка зависимости админпанели от того, запустилась ли служба отвечающая за БД
+    networks:
+      - socket 
+  
