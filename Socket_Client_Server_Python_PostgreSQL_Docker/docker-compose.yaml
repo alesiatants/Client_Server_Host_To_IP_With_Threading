@@ -9,10 +9,12 @@ services:
       POSTGRES_DB: socket_db # имя БД
       POSTGRES_USER: postgres # имя пользователя БД
       POSTGRES_PASSWORD: postgres # пароль пользователя БД
+      
     ports:
       - "5432:5432" # порт, на котором будет запущено приложение, совпадает с портом на хост машине
     volumes:
       - ./init/init.sql:/docker-entrypoint-initdb.d/init.sql # монтирование sql скриптов как том в контейнере в каталоге docker-entrypoint-initdb.d. Позволяет выполнять сценарии из файла init.sql при инициализации контейнера
+      - db:/var/lib/postgresql/data
     networks:
       - socket
   pgadmin:
@@ -28,4 +30,7 @@ services:
       - postgres # установка зависимости админпанели от того, запустилась ли служба отвечающая за БД
     networks:
       - socket 
+volumes:
+  db:
+    driver: local
   
