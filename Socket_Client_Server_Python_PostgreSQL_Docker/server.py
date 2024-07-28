@@ -21,14 +21,23 @@ def create_server(host, port):
     try:
         server_socket.bind((host, port))
     except socket.error as e:
-        print(e)
-        return
+        print(f"Ошибка подключения сервера - {e}")
+        exit(1)
 
     print('Ожидание соединения...')
-    server_socket.listen(10000)
-    
-                          
-    def check_db_dns(conn, domain):
+    server_socket.listen(10000)   
+     
+		# создание потока для очистки устаревших соответствий в словаре
+    start_new_thread(cleanup, (lock, table))
+    while True:
+        
+        object_conn, address = server_socket.accept()
+        print(f'Установлено соединение с: {address[0]}:{address[1]}')
+        thread_count += 1
+        start_new_thread(handle_client, (object_conn, address, lock, table, conn))
+        print(f'Номер потока: {thread_count}')
+    #server_socket.close()
+def check_db_dns(conn, domain):
         '''Поиск записи (в БД, обращаясь на dns сервер, обработка неккоректного ввода хоста)
           и возврат ip'''
         if conn.check_records(domain) != 0:
@@ -40,9 +49,24 @@ def create_server(host, port):
                   conn.insert_new_record(domain, res, round_ttl(ttl))
                   print("Успешно добавлено в БД!")
                 else:
-                      res = "0"
+                      res = "Некорректные данные"
         return res
-    def handle_client(connection, address, lock):
+
+def cleanup(lock, table):
+         '''Очистка пар в словаре, которые были добавлены более 5 с. назад'''
+         while True:
+               time.sleep(10)
+               with lock:
+                      print("Нужна очистка?")
+                      try:
+                      	for domain, data in list(table.items()):
+                              if time.time() - data[1] > 5:
+                                      del table[domain]
+                                      print('Успешно удалено из словаря!')
+                      except Exception as ex:
+                           print(f"Возникла ошибка с очисткой словаря : {ex}")
+
+def handle_client(connection, address, lock, table, conn):
         '''Обрабатывает запросы от клиентов в отдельном потоке'''
         
         while True:
@@ -66,10 +90,12 @@ def create_server(host, port):
                          print("Успешно получено из словаря!")
                     else:
                          ip_address = check_db_dns(conn,domain)
-                         table[domain] = (ip_address, time.time())
-                         print("Успешно добавлено в словарь!")
+                         if ip_address!="Некорректные данные":
+                                table[domain] = (ip_address, time.time())
+                                print("Успешно добавлено в словарь!")
+                                
+                                print(table.items()) # печатаем элементы словаря
                          res = ip_address
-                    print(table.items()) # печатаем элементы словаря
                   except Exception as ex:
                        print(f"Возникла ошибка : {ex}") 
                 
@@ -80,30 +106,6 @@ def create_server(host, port):
                 break
             
         connection.close()
-        
-    def cleanup():
-         '''Очистка пар в словаре, которые были добавлены более 5 с. назад'''
-         while True:
-               time.sleep(10)
-               with lock:
-                      print("Нужна очистка?")
-                      try:
-                      	for domain, data in list(table.items()):
-                              if time.time() - data[1] > 5:
-                                      del table[domain]
-                                      print('Успешно удалено из словаря!')
-                      except Exception as ex:
-                           print(f"Возникла ошибка с очисткой словаря : {ex}")
-		# создание потока для очистки устаревших соответствий в словаре
-    start_new_thread(cleanup, ())
-    while True:
-        
-        object_conn, address = server_socket.accept()
-        print(f'Установлено соединение с: {address[0]}:{address[1]}')
-        thread_count += 1
-        start_new_thread(handle_client, (object_conn, address, lock))
-        print(f'Номер потока: {thread_count}')
-    #server_socket.close()
 
 def main():
     '''Запускает сервер на localhost:10000'''
