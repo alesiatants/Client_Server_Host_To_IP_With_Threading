@@ -5,9 +5,8 @@ import threading
 from connection import Connection
 from get_ttl_round import round_ttl
 import time
-
-
-    
+from tree import SuffixTree 
+suffixtree = SuffixTree()
 def create_server(host, port):
     '''Создает потоковый сокет сервера и обрабатывает соединения с клиентами'''
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -15,6 +14,7 @@ def create_server(host, port):
     conn = Connection()
     # создание пустого словаря для сопоставления доменов и IP-адресов, времени их внесения
     table = {}
+    
     # создание объекта блокировки для безопасного доступа к общему ресурсу - словарю
     lock = threading.Lock()  
     
@@ -29,6 +29,8 @@ def create_server(host, port):
      
 		# создание потока для очистки устаревших соответствий в словаре
     start_new_thread(cleanup, (lock, table))
+    # создание потока для обнавления дерева суффиксов актуальными данными
+    start_new_thread(refreshsufixtree, (lock,conn))
     while True:
         
         object_conn, address = server_socket.accept()
@@ -65,23 +67,61 @@ def cleanup(lock, table):
                                       print('Успешно удалено из словаря!')
                       except Exception as ex:
                            print(f"Возникла ошибка с очисткой словаря : {ex}")
-
+def refreshsufixtree(lock, conn):
+     '''Обнавление дерева суффиксов актуальными доменами и ip-адресами'''
+     while True:
+               time.sleep(10)
+               with lock:
+                    try:
+                         print("Обнавляем дерево")
+                         records = conn.select_all()
+                         
+                         if not records:
+                            print('Список пуст')
+                         else:
+                              print("Вносим изменения в дерево")
+                              global suffixtree
+                              suffixtree=SuffixTree()
+                              for record in records:
+                                print(f"{record[0]} {record[1]}")
+                                suffixtree.insert(record[0], record[1])
+                              
+                    except Exception as ex:
+                      print(f"Возникла ошибка с обновлением дерева : {ex}")
 def handle_client(connection, address, lock, table, conn):
         '''Обрабатывает запросы от клиентов в отдельном потоке'''
         
         while True:
             try:
-                data = connection.recv(1024)
-                if not data or data.decode() == "Выход":
+              data = connection.recv(1024)
+              if not data or data.decode() == "Выход":
                     print(f'Завершено соединение с: {address[0]}:{address[1]}')
                     break
 
-                domain = data.decode()
-                print(f'Получен домен: {domain}')
-                print('Обработка данных...')
+              domain =[q for q in data.decode().split()] 
+              if domain[0]=="find":
+                print(f'Получена часть домена: {domain[1]}')
+                print('Поиск подходящих доменов...')
                 
+                
+                with lock:
+                  
+                  
+                  result = suffixtree.search_substring(domain[1])
+                  
+                  res=""
+                  for key, value in result:
+                          res += f"{key}: {value}\n"
+                  print(res)
+                  if(res==""):
+                       res=f'Нету подходящих доменов, удовлетворяющих поиску {domain[1]}'
+              else:
+                print(f'Получен домен: {domain[0]}')
+                print('Обработка данных...')
+                domain = domain[0]
                 # начало блока синхронизации для обеспечения потокобезопасного доступа к словарю - блокировка
                 with lock:
+                  print(lock)
                   try:
                     # проверка наличия домена в словаре и проверка времени кэширования
                     if domain in table and time.time() - table[domain][1] <= 5:
@@ -98,8 +138,7 @@ def handle_client(connection, address, lock, table, conn):
                          res = ip_address
                   except Exception as ex:
                        print(f"Возникла ошибка : {ex}") 
-                
-                connection.sendall(res.encode())
+              connection.sendall(res.encode())
                
             except (ConnectionResetError, ConnectionAbortedError):
                 print(f'Завершено соединение с: {address[0]}:{address[1]}')
