@@ -63,3 +63,10 @@ class Connection:
         ip_value = session.query(SocketLog.ip).filter(SocketLog.domen == domen).scalar()
         session.close()
         return ip_value
+    def select_all(self):
+        session = self.Session()
+        session.execute(text('SELECT socket.delete_old_rows_before_select()'))
+        stmt = session.query(*[getattr(SocketLog, field) for field in ['domen', 'ip']])
+        res =stmt.all()
+        session.close()
+        return res
