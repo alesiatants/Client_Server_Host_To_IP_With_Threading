@@ -1,3 +1,4 @@
+from queue import Queue
 import socket
 from ping_ip_ttl import get_ip_ttl
 from _thread import start_new_thread
@@ -29,8 +30,9 @@ def create_server(host, port):
      
 		# создание потока для очистки устаревших соответствий в словаре
     start_new_thread(cleanup, (lock, table))
+    result_queue = Queue()
     # создание потока для обнавления дерева суффиксов актуальными данными
-    start_new_thread(refreshsufixtree, (lock,conn))
+    start_new_thread(refreshsufixtree, (lock,conn, result_queue))
     while True:
         
         object_conn, address = server_socket.accept()
@@ -67,7 +69,7 @@ def cleanup(lock, table):
                                       print('Успешно удалено из словаря!')
                       except Exception as ex:
                            print(f"Возникла ошибка с очисткой словаря : {ex}")
-def refreshsufixtree(lock, conn):
+def refreshsufixtree(lock, conn, result_queue: Queue):
      '''Обнавление дерева суффиксов актуальными доменами и ip-адресами'''
      while True:
                time.sleep(10)
@@ -80,11 +82,15 @@ def refreshsufixtree(lock, conn):
                             print('Список пуст')
                          else:
                               print("Вносим изменения в дерево")
-                              global suffixtree
+                              global suffixtree 
                               suffixtree=SuffixTree()
                               for record in records:
                                 print(f"{record[0]} {record[1]}")
                                 suffixtree.insert(record[0], record[1])
+                                result_queue.put(suffixtree)
+                                
+
+                                print(suffixtree.search_substring(record[0]))
                               
                     except Exception as ex:
                       print(f"Возникла ошибка с обновлением дерева : {ex}")
@@ -92,12 +98,14 @@ def handle_client(connection, address, lock, table, conn):
         '''Обрабатывает запросы от клиентов в отдельном потоке'''
         
         while True:
-            try:
-              data = connection.recv(1024)
-              if not data or data.decode() == "Выход":
+          try:
+            data = connection.recv(1024)
+            if not data or data.decode() == "Выход":
                     print(f'Завершено соединение с: {address[0]}:{address[1]}')
                     break
-
+            if data.decode().isspace():
+                   res = "Строка не должна быть пустой!"
+            else:
               domain =[q for q in data.decode().split()] 
               if domain[0]=="find":
                 print(f'Получена часть домена: {domain[1]}')
@@ -138,9 +146,9 @@ def handle_client(connection, address, lock, table, conn):
                          res = ip_address
                   except Exception as ex:
                        print(f"Возникла ошибка : {ex}") 
-              connection.sendall(res.encode())
+            connection.sendall(res.encode())
                
-            except (ConnectionResetError, ConnectionAbortedError):
+          except (ConnectionResetError, ConnectionAbortedError):
                 print(f'Завершено соединение с: {address[0]}:{address[1]}')
                 break
             
@@ -153,3 +161,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
